@@ -126,6 +126,67 @@ func (d *Dumper) Dump() (string, error) {
 	return p, nil
 }
 
+// Creates a MYSQL Dump based on the options supplied through the dumper.
+func (d *Dumper) DumpTable(tableName string) (string, error) {
+	name := time.Now().Format(d.format)
+	p := path.Join(d.dir, name+".sql")
+
+	// Check dump directory
+	if e, _ := exists(p); e {
+		return p, errors.New("Dump '" + name + "' already exists.")
+	}
+
+	// Create .sql file
+	f, err := os.Create(p)
+
+	if err != nil {
+		return p, err
+	}
+
+	defer f.Close()
+
+	data := dump{
+		DumpVersion: version,
+		Tables:      make([]*table, 0),
+	}
+
+	// Get server version
+	if data.ServerVersion, err = getServerVersion(d.db); err != nil {
+		return p, err
+	}
+
+	// Get tables
+	tables, err := getTables(d.db)
+	if err != nil {
+		return p, err
+	}
+
+	// Get sql for each table
+	for _, name := range tables {
+		if name == tableName {
+			if t, err := createTable(d.db, name); err == nil {
+				data.Tables = append(data.Tables, t)
+			} else {
+				return p, err
+			}
+		}
+	}
+
+	// Set complete time
+	data.CompleteTime = time.Now().String()
+
+	// Write dump to file
+	t, err := template.New("mysqldump").Parse(tmpl)
+	if err != nil {
+		return p, err
+	}
+	if err = t.Execute(f, data); err != nil {
+		return p, err
+	}
+
+	return p, nil
+}
+
 func getTables(db *sql.DB) ([]string, error) {
 	tables := make([]string, 0)
 
